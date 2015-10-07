@@ -6,9 +6,9 @@ from . import xmllog
 from .. import strformat
 
 
-
 class TestResult():
     pass
+
 
 class XunitXMLLogger(xmllog._XMLLogger):
     """
@@ -36,37 +36,36 @@ class XunitXMLLogger(xmllog._XMLLogger):
         # We don't actually start writing the xUnit content yet because we
         # need to know how many tests failed first.
 
-
     def log_url(self, url_data):
         """
         Called by linkchecker for each checked link (or only failures).
         """
 
         t = TestResult()
-        t.attrs = {}
+        t.errors = []
 
-        if self.has_part("result"):
-            if url_data.result:
-                t.attrs['type'] = unicode(url_data.result)
-            if not url_data.valid:
-                t.failure = True
-            else:
-                t.failure = False
+        if not self.has_part("result"):
+            t.errors.append("Missing result")
         else:
-            return #TODO?
+            t.result = unicode(url_data.result)
+            if not url_data.valid:
+                t.result_type = "failure"
+            else:
+                t.result_type = "success"
+
+        if self.has_part('url'):
+            t.url = unicode(url_data.base_url)
+        else:
+            t.errors.append("Missing url")
+            t.url = None
 
         if self.has_part("realurl"):
             t.real_url = unicode(url_data.url)
 
-        if self.has_part('url'):
-            t.url = unicode(url_data.base_url)
-
         if url_data.name and self.has_part('name'):
-            t.name = "HAD A NAME:" + unicode(url_data.name)
+            t.name = unicode(url_data.name)
         else:
             t.name = t.url
-
-        t.attrs['name'] = t.name
 
         if url_data.parent_url and self.has_part('parenturl'):
             t.parent_url = unicode(url_data.parent_url)
@@ -78,11 +77,10 @@ class XunitXMLLogger(xmllog._XMLLogger):
             t.column = False
 
         if url_data.checktime and self.has_part("checktime"):
-            t.attrs['time'] = u"%f" % url_data.checktime
+            t.time = u"%f" % url_data.checktime
 
-        t.text = "{0.name} [{0.real_url}] from {0.parent_url}".format(t)
-        #if t.line and t.column:
-        #    t.text += "(line {0.line}, column {0.column})".format(t)
+        if t.errors:
+            t.result_type = "error"
 
         self.tests.append(t)
 
@@ -107,8 +105,8 @@ class XunitXMLLogger(xmllog._XMLLogger):
             suite_attrs = {"created": strformat.strtime(self.starttime),
                            "name": common_parent_url,
                            "tests": unicode(len(tests)),
-                           "errors": unicode(0),
-                           "failures": unicode(len([test for test in tests if test.failure])),
+                           "errors": str(len([test for test in tests if test.result == "error"])),
+                           "failures": str(len([test for test in tests if test.result == "failure"])),
                            "skip": unicode(0),
                            }
             self.xml_starttag(u'testsuite', suite_attrs)
@@ -122,13 +120,35 @@ class XunitXMLLogger(xmllog._XMLLogger):
         self.xml_end_output()
         self.close_fileoutput()
 
-
     def write_test_log(self, test):
-        if test.failure:
-            self.xml_tag(u'testcase',
-                         content=test.text,
-                         attrs=test.attrs)
-            self.flush()
+        if test.errors:
+            tag = u'error'
+        elif test.result_type == "failure":
+            tag = u'failure'
+        else:
+            return
+
+        if test.errors:
+            content = "Error creating xUnit output: "
+            content += ", ".join(test.errors)
+        else:
+            content = "{0.name} [{0.real_url}] from {0.parent_url}".format(test)
+            if test.line and test.column:
+                content += " at line {0.line}, column {0.column}".format(test)
+
+        testcase_attrs = {}
+        testcase_attrs[u'name'] = test.name
+
+        tag_attrs = {}
+        if not test.errors:
+            tag_attrs[u'message'] = test.result
+
+        self.xml_starttag(u'testcase', attrs=testcase_attrs)
+
+        self.xml_tag(tag, content, attrs=tag_attrs)
+
+        self.xml_endtag(u'testcase')
+        self.flush()
 
     def end_output_for_one_suite(self, **kwargs):
         """
@@ -137,10 +157,11 @@ class XunitXMLLogger(xmllog._XMLLogger):
         suite_attrs = {"created": strformat.strtime(self.starttime),
                        "name": "LinkChecker",
                        "tests": unicode(len(self.tests)),
-                       "errors": unicode(0),
-                       "failures": str(len([test for test in self.tests if test.failure])),
+                       "errors": str(len([test for test in self.tests if test.result_type == "error"])),
+                       "failures": str(len([test for test in self.tests if test.result_type == "failure"])),
                        "skip": unicode(0),
                        }
+
         self.xml_starttag(u'testsuite', suite_attrs)
 
         for test in self.tests:
@@ -150,6 +171,6 @@ class XunitXMLLogger(xmllog._XMLLogger):
         self.xml_end_output()
         self.close_fileoutput()
 
-        #wait wait, do we want a test suite per page?
+        # wait wait, do we want a test suite per page?
 
         # see https://gist.github.com/Great-Antique/adb2b414110f5d242e57
