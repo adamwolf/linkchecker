@@ -132,20 +132,20 @@ class XunitXMLLogger(xmllog._XMLLogger):
             content = "Error creating xUnit output: "
             content += ", ".join(test.errors)
         else:
-            content = "{0.name} [{0.real_url}] from {0.parent_url}".format(test)
+            content = "{0.result} when requesting {0.name} [{0.real_url}] from {0.parent_url}".format(test)
             if test.line and test.column:
-                content += " at line {0.line}, column {0.column}".format(test)
+                content += " at source line {0.line}, column {0.column}".format(test)
 
         testcase_attrs = {}
         testcase_attrs[u'name'] = test.name
 
         tag_attrs = {}
         if not test.errors:
-            tag_attrs[u'message'] = test.result
+            tag_attrs[u'message'] = test.content
 
         self.xml_starttag(u'testcase', attrs=testcase_attrs)
 
-        self.xml_tag(tag, content, attrs=tag_attrs)
+        self.xml_tag(tag, test.result, attrs=tag_attrs)
 
         self.xml_endtag(u'testcase')
         self.flush()
